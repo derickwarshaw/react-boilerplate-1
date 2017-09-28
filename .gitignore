@@ -3,6 +3,7 @@ coverage
 build
 junit
 generated
+server/generated
 node_modules
 .nyc_output
 stats.json

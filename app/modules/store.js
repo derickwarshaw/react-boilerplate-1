@@ -2,10 +2,8 @@ import { createStore, applyMiddleware, compose } from 'redux';
 import { createLogger } from 'redux-logger';
 import { fromJS, Iterable } from 'immutable';
 import { routerMiddleware } from 'react-router-redux';
-import createSagaMiddleware from 'redux-saga';
+import createSagaMiddleware, { END } from 'redux-saga';
 import createReducer from './reducers';
-import rootSaga from './sagas';
-
 
 const sagaMiddleware = createSagaMiddleware();
 
@@ -27,17 +25,18 @@ export default function configureStore(initialState = {}, history) {
       return state;
     };
 
-    middlewares.push(createLogger({ stateTransformer }));
+    if (__CLIENT__) {
+      middlewares.push(createLogger({ stateTransformer }));
+      const getDebugSessionKey = () => {
+        const matches = window.location.href.match(/[?&]debug_session=([^&#]+)\b/);
+        return (matches && matches.length > 0) ? matches[1] : null;
+      };
 
-    const getDebugSessionKey = () => {
-      const matches = window.location.href.match(/[?&]debug_session=([^&#]+)\b/);
-      return (matches && matches.length > 0) ? matches[1] : null;
-    };
-
-    Array.prototype.push.apply(enhancers, [
-      require('../utils/devtools.component').default.instrument(),
-      persistState(getDebugSessionKey(), (state) => fromJS(state)),
-    ]);
+      Array.prototype.push.apply(enhancers, [
+        require('../utils/devtools.component').default.instrument(),
+        persistState(getDebugSessionKey(), (state) => fromJS(state)),
+      ]);
+    }
   }
 
   const store = createStore(
@@ -49,8 +48,8 @@ export default function configureStore(initialState = {}, history) {
     )
   );
 
-  sagaMiddleware.run(rootSaga);
-
+  store.runSaga = sagaMiddleware.run;
+  store.close = () => store.dispatch(END);
   if (module.hot) {
     module.hot.accept('./reducers', () => {
       const createReducers = require('./reducers').default;

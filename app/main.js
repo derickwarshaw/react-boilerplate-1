@@ -1,25 +1,30 @@
+/* eslint-disable */
+
 /**
  * app.js
  *
  * This is the entry file for the application, only setup and boilerplate
  * code.
  */
+// Needed for redux-saga es6 generator support
+import 'babel-polyfill';
 
 import React from 'react';
 import ReactDOM from 'react-dom';
-
-// Needed for redux-saga es6 generator support
-import 'babel-polyfill';
 
 // Import all the third party stuff
 import { AppContainer } from 'react-hot-loader';
 import { Provider } from 'react-redux';
 import createHistory from 'history/createBrowserHistory';
-import { ConnectedRouter } from 'react-router-redux';
-import injectTapEventPlugin from 'react-tap-event-plugin';
+import { ConnectedRouter, syncHistoryWithStore } from 'react-router-redux';
+import injectTapEventPlugin from 'react-tap-event-plugin'
+import rootSaga from './modules/sagas';
 import FontFaceObserver from 'fontfaceobserver';
 import 'normalize.css/normalize.css';
 import './main.scss';
+
+// Import selector for `syncHistoryWithStore`
+import { selectLocationState } from './modules/router/router.selectors';
 
 import configureStore from './modules/store';
 
@@ -43,9 +48,11 @@ injectTapEventPlugin();
 // this uses the singleton browserHistory provided by react-router
 // Optionally, this could be changed to leverage a created history
 // e.g. `const browserHistory = useRouterHistory(createBrowserHistory)();`
-const initialState = {};
 const browserHistory = createHistory();
+const initialState = window.APP_STATE;
 const store = configureStore(initialState, browserHistory);
+delete window.APP_STATE;
+store.runSaga(rootSaga);
 
 if (process.env.NODE_ENV === 'development') {
   const DevToolsComponent = require('./utils/devtools.component').default;
@@ -68,7 +75,7 @@ const render = () => {
     <AppContainer>
       <Provider store={store}>
         <ConnectedRouter history={browserHistory}>
-          <NextApp />
+          <NextApp userAgent={navigator.userAgent} />
         </ConnectedRouter>
       </Provider>
     </AppContainer>,
@@ -76,7 +83,6 @@ const render = () => {
   );
 };
 
-// Chunked polyfill for browsers without Intl support
 if (!window.Intl) {
   (new Promise((resolve) => {
     resolve(require('intl'));
@@ -93,7 +99,6 @@ if (!window.Intl) {
   render();
 }
 
-/* istanbul ignore next */
 if (module.hot) {
   module.hot.accept('./routes', () => {
     render();

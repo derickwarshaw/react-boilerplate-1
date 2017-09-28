@@ -3,13 +3,47 @@
  */
 
 /* eslint-disable import/no-extraneous-dependencies */
+/* eslint no-console: 0 */
 const path = require('path');
 const webpack = require('webpack');
-const FaviconsWebpackPlugin = require('favicons-webpack-plugin');
+// we are not using webpack plugin as it does not work with SSR
+// const FaviconsWebpackPlugin = require('favicons-webpack-plugin');
 const WebpackAppversionPlugin = require('webpack-appversion-plugin');
 const SpritesmithPlugin = require('webpack-spritesmith');
-const autoprefixer = require('autoprefixer');
-/* eslint-enable import/no-extraneous-dependencies */ /* eslint-enable import/no-extraneous-dependencies */
+const ExtractTextPlugin = require('extract-text-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
+const AssetsPlugin = require('assets-webpack-plugin');
+
+let outputAssetsPath = path.join(process.cwd(), 'server', 'generated');
+
+if (process.env.NODE_ENV === 'production') {
+  outputAssetsPath = path.join(process.cwd(), 'dist');
+}
+
+const assetsPluginInstance = new AssetsPlugin({
+  path: outputAssetsPath,
+  filename: 'assets.json',
+});
+/* eslint-enable import/no-extraneous-dependencies */
+
+
+const chalk = require('chalk');
+
+const debug = console.log.bind(console, chalk.cyan('[base service]'));
+debug(chalk.gray(JSON.stringify(assetsPluginInstance)));
+
+const extractVendorCSSPlugin = new ExtractTextPlugin('vendor.[contenthash].css');
+const extractSCSSPlugin = new ExtractTextPlugin('main.css');
+
+const isBuildingDll = Boolean(process.env.BUILDING_DLL);
+const vendorCSSLoaders = extractVendorCSSPlugin.extract({
+  fallback: 'style-loader',
+  use: 'css-loader',
+});
+const mainCSSLoaders = extractSCSSPlugin.extract({
+  fallback: 'style-loader',
+  use: ['css-loader', 'sass-loader'],
+});
 
 const buildSpritePlugin = (name) => new SpritesmithPlugin({
   retina: '-2x',
@@ -33,7 +67,7 @@ module.exports = (options) => {
   const webpackConfig = {
     entry: options.entry,
     output: Object.assign({
-      path: path.resolve(process.cwd(), 'dist'),
+      path: path.join(process.cwd(), 'dist'),
       publicPath: '/',
     }, options.output),
     module: {
@@ -50,48 +84,26 @@ module.exports = (options) => {
         // So, no need for ExtractTextPlugin here.
         test: /\.css$/,
         include: /node_modules/,
-        loaders: ['style-loader', 'css-loader'],
-      }, {
-        test: /\.(eot|svg|ttf|woff|woff2)$/,
-        loader: 'file-loader',
+        use: vendorCSSLoaders,
       }, {
         test: /\.scss$/,
-        use: [{
-          loader: 'style-loader',
-        }, {
-          loader: 'css-loader',
-        }, {
-          loader: 'postcss-loader',
-          options: {
-            plugins: function () {
-              return [autoprefixer('last 2 versions', 'ie 10')];
-            },
-          },
-        }, {
-          loader: 'sass-loader',
-        }],
+        use: mainCSSLoaders,
       }, {
-        test: /\.(jpg|png|gif)$/,
-        use: [
-          {
-            loader: 'file-loader',
-            options: {
-              query: {
-                name: '[name].[ext]',
-              },
-            },
-          },
+        test: /\.(svg|eot|otf|ttf|woff|woff2)$/,
+        loader: 'file-loader',
+      }, {
+        test: /\.(jpg|png|gif|ico)$/,
+        loaders: [
+          'file-loader',
           {
             loader: 'image-webpack-loader',
-            options: {
-              query: {
-                progressive: true,
-                optimizationLevel: 7,
-                interlaced: false,
-                pngquant: {
-                  quality: '65-90',
-                  speed: 4,
-                },
+            query: {
+              progressive: true,
+              optimizationLevel: 7,
+              interlaced: false,
+              pngquant: {
+                quality: '65-90',
+                speed: 4,
               },
             },
           },
@@ -111,7 +123,14 @@ module.exports = (options) => {
       }],
     },
     plugins: options.plugins.concat([
-      new FaviconsWebpackPlugin(path.join(process.cwd(), 'app', 'images', 'favicon.png')),
+      new CopyWebpackPlugin([{
+        from: path.join(process.cwd(), 'app', 'fixtures'),
+        to: 'fixtures',
+      }]),
+      extractVendorCSSPlugin,
+      extractSCSSPlugin,
+      // we are not using webpack plugin as it does not work with SSR
+      // new FaviconsWebpackPlugin(path.join(process.cwd(), 'app', 'images', 'favicon.png')),
       buildSpritePlugin('mobile'),
       buildSpritePlugin('desktop'),
       new webpack.ProvidePlugin({
@@ -126,12 +145,16 @@ module.exports = (options) => {
         'process.env': {
           NODE_ENV: JSON.stringify(process.env.NODE_ENV),
         },
+        '__SERVER__': false,
+        '__CLIENT__': true,
       }),
       new webpack.NamedModulesPlugin(),
-    ]),
+    ]).concat(isBuildingDll ? [] : [assetsPluginInstance]),
     resolve: {
       alias: {
-        'env-config': path.join(process.cwd(), 'app', 'environment', `${process.env.ENV_CONFIG || 'development'}.js`),
+        'env-config': path.join(process.cwd(), 'app', 'environment', `${process.env.NODE_ENV}.js`),
+        'TweenLite': 'gsap/src/uncompressed/TweenLite',
+        'ScrollToPlugin': 'gsap/src/uncompressed/plugins/ScrollToPlugin',
       },
       modules: ['app', 'node_modules'],
       extensions: [
@@ -154,7 +177,7 @@ module.exports = (options) => {
     webpackConfig.plugins.push(
       new WebpackAppversionPlugin({
         entries: ['main'],
-        version: '1.0.0',
+        version: process.env.VERSION,
         isOpen: true,
       })
     );
@@ -162,4 +185,3 @@ module.exports = (options) => {
 
   return webpackConfig;
 };
-
